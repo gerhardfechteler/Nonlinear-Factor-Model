@@ -1,11 +1,6 @@
 import numpy as np
 from simulation_classes import nDFM_simulator4 as nDFM_simulator
-from model_classes import nDFM
-from model_classes import TimeSeriesMLP
-from model_classes import VAR
-from model_classes import DFM
-from model_classes import DFM2
-from model_classes import DFM3
+from model_classes import nDFM, TimeSeriesMLP, VAR, DFM
 from keras.backend import clear_session
 
 # series properties
@@ -78,13 +73,13 @@ print('Oracle completed')
 # print('DFM2_CV completed')
 
 # DFM3
-model_DFM3 = DFM3()
+model_DFM3 = DFM()
 model_DFM3.train(X_train, lags_factor_dynamics, lags_idiosyncratic_dynamics, r)
 X_pred_DFM3 = model_DFM3.forecast(X_test)
 print('DFM3 completed')
 
 # DFM3 cross-validated
-model_DFM3_CV = DFM3()
+model_DFM3_CV = DFM()
 model_DFM3_CV.train_CV(X_train, 
                       range_lags_id = [lags_idiosyncratic_dynamics],
                       range_numfac = [i+1 for i in range(10)])
