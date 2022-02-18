@@ -349,7 +349,8 @@ class diagonal_VAR():
         """
         train(self, X, lags)
         
-        
+        Estimates the autoregressive parameters (diagonal matrices) of the VAR
+        model for the provided number of lags.
 
         Parameters
         ----------
@@ -365,12 +366,18 @@ class diagonal_VAR():
         
         T,k = X.shape
         beta = np.zeros((k,lags))
-        for i in range(k):
+        
+        # as the VAR model is diagonal, we can estimate each series separately
+        for i in range(k): # iteration over all series
+            # Construct data, lagged values are regressors
             Yi = X[lags:,i]
             Xi = np.zeros((T-lags, lags))
             for lag in range(lags):
                 Xi[:,lags-lag-1] = X[lag:T-lags+lag,i]
+            
+            # Estimate the parameters by OLS
             beta[i,:] = (inv(Xi.T @ Xi) @ Xi.T @ Yi).flatten()
+        
         self.lags = lags
         self.k = k
         self.beta = beta
@@ -380,24 +387,35 @@ class diagonal_VAR():
         """
         forecast(self, X)
         
-        
+        Computes 1-step-ahead forecasts for the provided series based on the
+        trained model.
 
         Parameters
         ----------
         X : numpy.ndarray
-            DESCRIPTION.
+            (m,k) array of observed series
+            m - number of observations, has to be larger or equal than number 
+                of lags
+            k - number of series
 
         Returns
         -------
         X_pred : numpy.ndarray
-            DESCRIPTION.
+            (m-lags+1,k) array of forecasted series
+            m - number of observations
+            k - number of series
         """
         
         T,k = X.shape
         lags = self.lags
+        
+        # Check for consistency between training and forecasting data
         if k != self.k:
-            raise ValueError('The number of series differ between training and forecast data.')
+            raise ValueError('The number of series differs between training and forecast data.')
+        
         X_pred = np.zeros((T-lags+1, k))
+        
+        # we forecast each series separately, as the VAR is diagonal
         for i in range(k):
             Xi = np.zeros((T-lags+1, lags))
             for lag in range(lags):
@@ -409,6 +427,21 @@ class diagonal_VAR():
 
 
 class nDFM():
+    """
+    Class to estimate a nonlinear dynamic factor model via an autoencoder and
+    make predictions.
+    
+    Available methods:
+    - train: train the nonlinear factor model for given factor lags, 
+        idiosyncratic lags, factors and neurons in the hidden layers.
+    - train_CV: train the nonlinear factor model via a grid search for the
+        hyperparameters, choosing the model minimizing the validation MSE.
+    - forecast: computes 1-step-ahead forecasts based on the estimated model.
+    
+    The method forecast can be used only after having estimated the model, i.e.
+    after having run the method train or the method train_CV.
+    """
+    
     def __init__(self):
         pass
     
@@ -420,25 +453,44 @@ class nDFM():
               training_method = 'state_space',
               verbose = True):
         """
-        Trains a nDFM for the series X.
-        NOTE: The keras session is cleared to speed up the training. This might 
-        result in problems if you have other keras models that you want to use 
-        later on.
+        train(self, X, 
+                  lags_factor_dynamics = 1, 
+                  lags_idiosyncratic_dynamics = 1, 
+                  number_of_factors = 2,
+                  training_method = 'state_space',
+                  verbose = True)
+        
+        Trains a nonlinear dynamic factor model for the series X.
 
         Parameters
         ----------
-        X: np.ndarray
-            (T, k) array of observed series
-        lags_factor_dynamics: int
-            number of lags to use for the estimation of the factor dynamics
-        lags_idiosyncratic_dynamics: int
-            number of lags to use for the estimation of the idiosyncratic 
-            noise dynamics
-        number_of_factors: int
-            number of factors to estimate, neurons in the bottleneck layer
-        training_method: str
-            method used for training, should be either 'state_space' or 'VAR'
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
+        lags_factor_dynamics : int, optional
+            Number of lags to use for the estimation of the factor dynamics. 
+            The default is 1.
+        lags_idiosyncratic_dynamics : int, optional
+            Number of lags to use for the estimation of the idiosyncratic noise
+            dynamics. The default is 1.
+        number_of_factors : int, optional
+            Number of factors to estimate, i.e. number of neurons in the 
+            bottleneck layer. The default is 2.
+        training_method : str, optional
+            Method used for training, should be one of:
+            - 'state_space': uses the state space representation for estimation
+            - 'VAR': uses the VAR representation for estimation
+            The default is 'state_space'.
+        verbose : bool, optional
+            Indicates, whether updates on the training progress should be 
+            outputted in the console. The default is True.
+
+        Returns
+        -------
+        None.
         """
+       
         self.verbose = verbose
         
         # Clear the keras session and initialize the model components
@@ -456,8 +508,9 @@ class nDFM():
         # call training methods based on training_method
         if (training_method == 'state_space'):
             self.__train_state_space__(X)
-        elif (training_method == 'VAR'):
-            self.__train_VAR__(X)
+        elif (training_method == 'VAR'): # VAR estimation not implemented
+            # self.__train_VAR__(X)
+            raise ValueError('VAR estimation method not yet implemented.')
         else:
             raise ValueError('The training method should be state_space of VAR')
     
@@ -468,30 +521,47 @@ class nDFM():
                   training_method = 'state_space',
                   verbose = True):
         """
+        train_CV(self, X, 
+                      range_lags_fd = [i+1 for i in range(5)], 
+                      range_lags_id = [i+1 for i in range(3)], 
+                      range_numfac = [i+1 for i in range(5)],
+                      training_method = 'state_space',
+                      verbose = True)
+        
         Trains a nDFM for the series X. Chooses the hyperparameters in the 
-        given ranges that minimize the cross-validation MSE. The last 10% of 
-        the observations are used for validation. The best model is trained
+        given ranges that minimize the validation MSE. The last 10% of 
+        observations are used for validation. The best model is trained
         again on the whole set.
-        NOTE: The keras session is cleared in each iteration to speed up the 
-        training. This might result in problems if you have other keras models
-        that you want to use later on.
 
         Parameters
         ----------
-        X : TYPE
-            DESCRIPTION.
-        range_lags_fd : list of int, optional
-            Number of lags to consider for the factor dynamics. 
-            The default is [1,2,3,4,5].
-        range_lags_id : list of int, optional
-            Number of lags to consider for the idiosyncratic dynamics. 
-            The default is [1,2,3].
-        range_numfac : list of int, optional
-            Number of factors to consider. The default is [1,2,3,4,5].
-        training_method: str, optional
-            method used for training, should be either 'state_space' or 'VAR'.
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
+        range_lags_fd : list, optional
+            List of integers, number of lags to consider for the factor 
+            dynamics. The default is [1,2,3,4,5].
+        range_lags_id : list, optional
+            List of integers, numbers of lags to consider for the idiosyncratic 
+            dynamics. The default is [1,2,3].
+        range_numfac : list, optional
+            List of integers, numbers of factors to consider. The default is 
+            [1,2,3,4,5].
+        training_method : str, optional
+            Method used for training, should be one of:
+            - 'state_space': uses the state space representation for estimation
+            - 'VAR': uses the VAR representation for estimation
             The default is 'state_space'.
+        verbose : bool, optional
+            Indicates, whether updates on the training progress should be 
+            outputted in the console. The default is True.
+
+        Returns
+        -------
+        None.
         """
+        
         self.verbose = verbose
         
         T,k = X.shape
@@ -528,9 +598,22 @@ class nDFM():
     
     def __train_state_space__(self, X):
         """
-        X_raw: np.ndarray
-            (T, k) array of observed series
+        __train_state_space__(self, X)
+        
+        Trains the model via the state space representation.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
+
+        Returns
+        -------
+        None.
         """
+        
         # estimate autoencoder
         self.autoencoder.train(X, self.number_of_factors)
         
@@ -553,37 +636,95 @@ class nDFM():
             # estimate idiosyncratic noise dynamics
             self.noise_dynamics.train(X_resid, self.lags_idiosyncratic_dynamics)
     
-    def __train_var__(self, 
-                      X_raw, 
-                      lags_factor_dynamics, 
-                      lags_idiosyncratic_dynamics, 
-                      number_of_factors):
+    def __train_var__(self, X):
         """
-        X_raw: np.ndarray
-            (T, k) array of observed series
+        __train_var__(self, X) 
+        
+        Trains the model via the VAR representation. Not implemented yet.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
+
+        Returns
+        -------
+        None.
         """
+        
         pass
+    
     
     def forecast(self, X):
         """
-        X_raw: np.ndarray
-            (T, k) array of observed series
+        forecast(self, X)
+        
+        Computes 1-step-ahead forecasts for the provided observations based on
+        the estimated model.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            (m,k) array of observed series
+            m - number of observations, has to be larger or equal than number 
+                of lags
+            k - number of series
+
+        Returns
+        -------
+        X_pred : numpy.ndarray
+            (m-lags+1,k) array of forecasted series, not bias adjusted
+            m - number of observations
+            k - number of series
+        X_pred_boot : numpy.ndarray
+            (m-lags+1,k) array of forecasted series, bias adjusted
+            m - number of observations
+            k - number of series
         """
+        
         try:
             if (self.training_method == 'state_space'):
-                return self.__forecast_state_space__(X)
-            elif (self.training_method == 'VAR'):
-                return self.__forecast_VAR__(X)
+                X_pred, X_pred_boot = self.__forecast_state_space__(X)
+            elif (self.training_method == 'VAR'): # VAR not yet implemented
+                # X_pred, X_pred_boot = self.__forecast_VAR__(X)
+                raise ValueError('VAR training method not yet implemented.')
             else:
                 raise ValueError('Training method unknown.')
         except:
-            raise ValueError('Train the model before forecasting')
+            raise ValueError('Forecasting failed.')
+        
+        return X_pred, X_pred_boot 
+    
     
     def __forecast_state_space__(self, X):
         """
-        X_: np.ndarray
-            (T, k) array of observed series
+        __forecast_state_space__(self, X)
+        
+        Computes 1-step-ahead forecasts for the provided observations based on
+        the estimated state space representation of the model.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            (m,k) array of observed series
+            m - number of observations, has to be larger or equal than number 
+                of lags
+            k - number of series
+
+        Returns
+        -------
+        X_pred : numpy.ndarray
+            (m-lags+1,k) array of forecasted series, not bias adjusted
+            m - number of observations
+            k - number of series
+        X_pred_boot : numpy.ndarray
+            (m-lags+1,k) array of forecasted series, bias adjusted
+            m - number of observations
+            k - number of series
         """
+
         # estimate factors
         F = self.autoencoder.encode(X)
         
@@ -594,7 +735,6 @@ class nDFM():
         X_predicted = self.autoencoder.decode(F_predicted) #+X_resid_predicted
         
         # bootstrapped expectation
-        # t1 = time.time()
         X_predicted_boot = np.zeros(X_predicted.shape)
         n_boot = self.F_resid.shape[0] # number of available residuals
         batch = 10
@@ -607,7 +747,6 @@ class nDFM():
             for j in range(batch_i):
                 X_predicted_boot += X_pred_i[j*X_predicted.shape[0]:(j+1)*X_predicted.shape[0],:]
         X_predicted_boot /= n_boot
-        # print(time.time()-t1)
         
         if self.lags_idiosyncratic_dynamics > 0:
             # obtain residuals to predict residual dynamics
@@ -624,386 +763,268 @@ class nDFM():
                 X_predicted_boot += e_predicted[-lags_diff:,:]
         
         return X_predicted, X_predicted_boot
+    
+    
+    def __forecast_VAR__(self, X):
+        """
+        __forecast_state_space__(self, X)
+        
+        Computes 1-step-ahead forecasts for the provided observations based on
+        the estimated state space representation of the model. Not implemented
+        yet.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            (m,k) array of observed series
+            m - number of observations, has to be larger or equal than number 
+                of lags
+            k - number of series
+
+        Returns
+        -------
+        None.
+        """
+        
+        pass
 
 
 
 class VAR():
+    """
+    Class to estimate a vector autoregressive (VAR) model and make predictions.
+    
+    Available methods:
+    train: Estimates the model for a given number of lags.
+    train_CV: Estimates the model for a list of numbers of lags and chooses the
+        best-performing number of lags on a validation set.
+    forecast: computes 1-step-ahead forecasts based on the estimated model.
+    
+    The method forecast can only be used after running the method train or
+    train_CV.
+    """
+    
     def __init__(self):
         pass
+    
+    
     def train(self, X, lags=1):
         """
-        Trains a VAR model for the series X with the given number of lags.
+        train(self, X, lags=1)
+        
+        Estimates a VAR model with the given number of lags, using the lagged
+        values of the series as regressors.
 
         Parameters
         ----------
-        X : np.ndarray
-            (T,k) array of series.
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
         lags : int, optional
-            number of lags to consider. The default is 1.
+            Number of lags. The default is 1.
+
+        Returns
+        -------
+        None.
         """
+        
         T, k = X.shape
         self.k = k
         self.lags = lags
         
+        # Define the matrices corresponding to the matrix notation of the VAR
         Y1 = X[lags:,:].T
         Z1 = np.hstack(tuple([X[lag:T-lags+lag,:] for lag in range(lags)]))
         Z1 = sm.add_constant(Z1).T
         
+        # Vectorize the matrix equation
         Y2 = Y1.reshape((-1,1))
         Z2 = np.kron(np.eye(k), Z1.T)
-        # print(Z2.shape)
+        
+        # obtain the OLS parameter estimator
         A2 = inv(Z2.T @ Z2) @ Z2.T @ Y2
+        
+        # construct the parameter matrix
         A1 = A2.reshape((k, k*lags+1))
         self.A1 = A1
         
+        # construct the autogregressive matrices
         A = [A1[:,0].reshape((-1,1))]
         for i in range(lags):
             A.append(A1[:,i*k+1:(i+1)*k+1])
         self.A = A
     
+    
     def train_CV(self, X, range_lags = [i+1 for i in range(3)]):
         """
-        Trains a VAR model for the series X. Chooses the lag in the given 
-        range that minimizes the cross-validation MSE. The last 10% of the 
-        observations are used for validation.
-
+        Trains a VAR model for the series X. Chooses the number of lags in the given 
+        range that minimizes the validation MSE. The last 10% of the 
+        observations are used for validation. The best model is trained again 
+        on the whole set.
+        
         Parameters
         ----------
-        X : TYPE
-            DESCRIPTION.
-        range_lags : TYPE, optional
-            DESCRIPTION. The default is [i for i in range(10)].
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
+        range_lags: list, optional
+            list of integer numbers of lags to consider. 
+            The default is [1,2,3].
+        
+        Returns
+        -------
+        None.
         """
+        
         T,k = X.shape
+        
+        # split data in training and validation set
         split = int(np.round(0.9*T)) # index for splitting in training and validation
         X_train = X[:split, :] # training set
         X_val = X[split:, :] # validation set
+        
+        # estimate a VAR for each specified number of lags
         MSE = np.zeros(len(range_lags))
         for i,lags in enumerate(range_lags):
             print(str(i+1) + ' of ' + str(len(range_lags)))
             self.train(X_train, lags = lags)
             X_pred = self.forecast(X_val)
             MSE[i] = np.mean((X_val[lags:, :] - X_pred[:-1, :])**2)
+        
+        # identify the best model in terms of validation MSE
         self.best_lags = range_lags[np.argmin(MSE)]
         print(MSE)
         
-        # train the model for the number of lags minimizing the cross-val MSE
+        # train the model for the number of lags minimizing the validation MSE
         self.train(X, lags = self.best_lags)
     
+    
     def forecast(self, X):
+        """
+        forecast(self, X)
+        
+        Computes 1-step-ahead forecasts of the provided series.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            (m,k) array of observed series
+            m - number of observations, has to be larger or equal than number 
+                of lags
+            k - number of series
+
+        Returns
+        -------
+        X_forecast : numpy.ndarray
+            (m-lags+1,k) array of forecasted series
+            m - number of observations
+            k - number of series
+        """
+        
         T, k = X.shape
         lags = self.lags
         if self.k != k:
-            raise ValueError('The number of series differ between training and forecast data.')
+            raise ValueError('The number of series differs between training and forecast data.')
+            
+        # construct regressor matrix
         Z1 = np.hstack(tuple([X[lag:T-lags+lag+1,:] for lag in range(lags)]))
         Z1 = sm.add_constant(Z1).T
         
+        # forecast based on estimated model parameters
         X_pred = self.A1 @ Z1
         X_pred = X_pred.T
         
         return X_pred
 
 
-# neither centered, nor standardized
+
 class DFM():
     """
+    Class to estimate a linear dynamic factor model via principal component
+    analysis (PCA) and make predictions.
     
+    Available methods:
+    - train: train the linear factor model for given factor lags, idiosyncratic
+        lags and factors .
+    - train_CV: train the linear factor model via a grid search for the
+        hyperparameters, choosing the model minimizing the validation MSE.
+    - forecast: computes 1-step-ahead forecasts based on the estimated model.
+    
+    The method forecast can be used only after having estimated the model, i.e.
+    after having run the method train or the method train_CV.
     """
+    
     def __init__(self):
         self.factor_dynamics = VAR()
         self.noise_dynamics = diagonal_VAR()
+    
     
     def train(self, X, 
               lags_factor_dynamics = 1, 
               lags_idiosyncratic_dynamics = 1, 
               number_of_factors = 2,
+              method = 'standardized',
               verbose = True):
         """
+        train(self, X, 
+                  lags_factor_dynamics = 1, 
+                  lags_idiosyncratic_dynamics = 1, 
+                  number_of_factors = 2,
+                  method = 'standardized',
+                  verbose = True)
         
+        Trains a linear dynamic factor model for the series X.
 
         Parameters
         ----------
-        X : np.ndarray
-            (T,k) array, series.
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
         lags_factor_dynamics : int, optional
-            DESCRIPTION. The default is 1.
+            Number of lags to use for the estimation of the factor dynamics. 
+            The default is 1.
         lags_idiosyncratic_dynamics : int, optional
-            DESCRIPTION. The default is 1.
+            Number of lags to use for the estimation of the idiosyncratic noise
+            dynamics. The default is 1.
         number_of_factors : int, optional
-            DESCRIPTION. The default is 2.
+            Number of factors to estimate, i.e. number of neurons in the 
+            bottleneck layer. The default is 2.
+        method : str, optional
+            Scaling before applying PCA. Should be one of:
+            - 'original': no scaling, not recommended!
+            - 'demeaned': demean the series before applying PCA
+            - 'standardized': standardize the series (mean=0, std=1)
+            The default is 'standardized'.
+        verbose : bool, optional
+            Indicates, whether updates on the training progress should be 
+            outputted in the console. The default is True.
+
+        Returns
+        -------
+        None.
         """
+        
         self.verbose = verbose
+        self.method = method
         
         T,k = X.shape
         self.lags_factor_dynamics = lags_factor_dynamics
         self.lags_idiosyncratic_dynamics = lags_idiosyncratic_dynamics
         
-        # Estimate factors via PCA
-        XX = X.T @ X / T
-        eig = np.linalg.eig(XX)
-        order = np.argsort(eig[0])
-        order = order[::-1]
-        self.eigval = eig[0][order] # store eigenvalues as attribute
-        eigvec = eig[1][:,order]
-        self.L = eigvec[:,:number_of_factors].T
-        F = X @ self.L.T
-        
-        # Estimate factor dynamics via VAR model
-        self.factor_dynamics.train(F, lags = lags_factor_dynamics)
-        
-        # estimate idiosyncratic noise dynamics
-        if self.lags_idiosyncratic_dynamics > 0:
-            X_resid = X - F @ self.L
-            self.noise_dynamics.train(X_resid, self.lags_idiosyncratic_dynamics)
-    
-    def train_CV(self, X, 
-                 range_lags_fd = [i+1 for i in range(5)], 
-                 range_lags_id = [i+1 for i in range(3)], 
-                 range_numfac = [i+1 for i in range(5)],
-                 verbose = True):
-        """
-        Trains a DFM for the series X. Chooses the number of factors in the 
-        given range that minimizes the cross-validation MSE. The last 10% of 
-        the observations are used for validation. The best model is trained
-        again on the whole set.
-
-        Parameters
-        ----------
-        X : TYPE
-            DESCRIPTION.
-        range_lags_fd : list of int, optional
-            Number of lags to consider for the factor dynamics. 
-            The default is [1,2,3,4,5].
-        range_lags_id : list of int, optional
-            Number of lags to consider for the idiosyncratic dynamics. 
-            The default is [1,2,3].
-        range_numfac : list of int, optional
-            Number of factors to consider. The default is [1,2,3,4,5].
-        """
-        self.verbose = verbose
-        
-        T,k = X.shape
-        split = int(np.round(0.9*T)) # index for splitting in training and validation
-        X_train = X[:split, :] # training set
-        X_val = X[split:, :] # validation set
-        MSE = np.zeros((len(range_numfac), len(range_lags_id), len(range_lags_fd)))
-        for i,num_fac in enumerate(range_numfac):
-            for j,lags_id in enumerate(range_lags_id):
-                for k,lags_fd in enumerate(range_lags_fd):
-                    # print(str(i+1) + ' of ' + str(len(range_numfac)))
-                    maxlags = max([lags_fd, lags_id])
-                    self.train(X_train, lags_fd, lags_id, num_fac)
-                    X_pred = self.forecast(X_val)
-                    MSE[i,j,k] = np.mean((X_val[maxlags:, :] - X_pred[:-1, :])**2)
-                    
-        # obtain MSE optimal hyperparameters
-        best_index = [x[0] for x in np.where(MSE == np.min(MSE))]
-        self.best_numfac = range_numfac[best_index[0]]
-        self.best_lags_id = range_lags_id[best_index[1]]
-        self.best_lags_fd = range_lags_fd[best_index[2]]
-        if verbose == True:
-            print(MSE)
-        
-        # train the model for the number of lags minimizing the cross-val MSE
-        self.train(X_train, 
-                   self.best_lags_fd,
-                   self.best_lags_id,
-                   self.best_numfac)
-        
-    def forecast(self, X):
-        F = X @ self.L.T
-        F_pred = self.factor_dynamics.forecast(F)
-        X_predicted = F_pred @ self.L
-        
-        if self.lags_idiosyncratic_dynamics > 0:
-            # obtain residuals to predict residual dynamics
-            e = X - F @ self.L
-            e_predicted = self.noise_dynamics.forecast(e)
-            
-            # merge factor and noise components
-            lags_diff = self.lags_idiosyncratic_dynamics - self.lags_factor_dynamics
-            if lags_diff >= 0:
-                X_predicted = X_predicted[lags_diff:,:] + e_predicted
-            else:
-                X_predicted += e_predicted[-lags_diff:,:]
-        
-        return X_predicted
-
-
-# centered, not standardized
-class DFM2():
-    """
-    
-    """
-    def __init__(self):
-        self.factor_dynamics = VAR()
-        self.noise_dynamics = diagonal_VAR()
-    
-    def train(self, X, 
-              lags_factor_dynamics = 1, 
-              lags_idiosyncratic_dynamics = 1, 
-              number_of_factors = 2,
-              verbose = True):
-        """
-        
-
-        Parameters
-        ----------
-        X : np.ndarray
-            (T,k) array, series.
-        lags_factor_dynamics : int, optional
-            DESCRIPTION. The default is 1.
-        lags_idiosyncratic_dynamics : int, optional
-            DESCRIPTION. The default is 1.
-        number_of_factors : int, optional
-            DESCRIPTION. The default is 2.
-        """
-        self.verbose = verbose
-        
-        T,k = X.shape
-        self.lags_factor_dynamics = lags_factor_dynamics
-        self.lags_idiosyncratic_dynamics = lags_idiosyncratic_dynamics
-        
-        # demean series
-        self.X_mean = np.mean(X,0)
-        X -= self.X_mean
-        
-        # Estimate factors via PCA
-        XX = X.T @ X / T
-        eig = np.linalg.eig(XX)
-        order = np.argsort(eig[0])
-        order = order[::-1]
-        self.eigval = eig[0][order] # store eigenvalues as attribute
-        eigvec = eig[1][:,order]
-        self.L = eigvec[:,:number_of_factors].T
-        F = X @ self.L.T
-        
-        # Estimate factor dynamics via VAR model
-        self.factor_dynamics.train(F, lags = lags_factor_dynamics)
-        
-        # estimate idiosyncratic noise dynamics
-        if self.lags_idiosyncratic_dynamics > 0:
-            X_resid = X - F @ self.L
-            self.noise_dynamics.train(X_resid, self.lags_idiosyncratic_dynamics)
-    
-    def train_CV(self, X, 
-                 range_lags_fd = [i+1 for i in range(5)], 
-                 range_lags_id = [i+1 for i in range(3)], 
-                 range_numfac = [i+1 for i in range(5)],
-                 verbose = True):
-        """
-        Trains a DFM for the series X. Chooses the number of factors in the 
-        given range that minimizes the cross-validation MSE. The last 10% of 
-        the observations are used for validation. The best model is trained
-        again on the whole set.
-
-        Parameters
-        ----------
-        X : TYPE
-            DESCRIPTION.
-        range_lags_fd : list of int, optional
-            Number of lags to consider for the factor dynamics. 
-            The default is [1,2,3,4,5].
-        range_lags_id : list of int, optional
-            Number of lags to consider for the idiosyncratic dynamics. 
-            The default is [1,2,3].
-        range_numfac : list of int, optional
-            Number of factors to consider. The default is [1,2,3,4,5].
-        """
-        self.verbose = verbose
-        
-        T,k = X.shape
-        split = int(np.round(0.9*T)) # index for splitting in training and validation
-        X_train = X[:split, :] # training set
-        X_val = X[split:, :] # validation set
-        MSE = np.zeros((len(range_numfac), len(range_lags_id), len(range_lags_fd)))
-        for i,num_fac in enumerate(range_numfac):
-            for j,lags_id in enumerate(range_lags_id):
-                for k,lags_fd in enumerate(range_lags_fd):
-                    # print(str(i+1) + ' of ' + str(len(range_numfac)))
-                    maxlags = max([lags_fd, lags_id])
-                    self.train(X_train, lags_fd, lags_id, num_fac)
-                    X_pred = self.forecast(X_val)
-                    MSE[i,j,k] = np.mean((X_val[maxlags:, :] - X_pred[:-1, :])**2)
-                    
-        # obtain MSE optimal hyperparameters
-        best_index = [x[0] for x in np.where(MSE == np.min(MSE))]
-        self.best_numfac = range_numfac[best_index[0]]
-        self.best_lags_id = range_lags_id[best_index[1]]
-        self.best_lags_fd = range_lags_fd[best_index[2]]
-        if verbose == True:
-            print(MSE)
-        
-        # train the model for the number of lags minimizing the cross-val MSE
-        self.train(X_train, 
-                   self.best_lags_fd,
-                   self.best_lags_id,
-                   self.best_numfac)
-        
-    def forecast(self, X):
-        # demean series
-        X -= self.X_mean
-        
-        F = X @ self.L.T
-        F_pred = self.factor_dynamics.forecast(F)
-        X_predicted = F_pred @ self.L
-        
-        if self.lags_idiosyncratic_dynamics > 0:
-            # obtain residuals to predict residual dynamics
-            e = X - F @ self.L
-            e_predicted = self.noise_dynamics.forecast(e)
-            
-            # merge factor and noise components
-            lags_diff = self.lags_idiosyncratic_dynamics - self.lags_factor_dynamics
-            if lags_diff >= 0:
-                X_predicted = X_predicted[lags_diff:,:] + e_predicted
-            else:
-                X_predicted += e_predicted[-lags_diff:,:]
-        
-        # add mean to predicted series
-        X_predicted += self.X_mean
-        
-        return X_predicted
-
-
-# centered and standardized
-class DFM3():
-    """
-    
-    """
-    def __init__(self):
-        self.factor_dynamics = VAR()
-        self.noise_dynamics = diagonal_VAR()
-    
-    def train(self, X, 
-              lags_factor_dynamics = 1, 
-              lags_idiosyncratic_dynamics = 1, 
-              number_of_factors = 2,
-              verbose = True):
-        """
-        
-
-        Parameters
-        ----------
-        X : np.ndarray
-            (T,k) array, series.
-        lags_factor_dynamics : int, optional
-            DESCRIPTION. The default is 1.
-        lags_idiosyncratic_dynamics : int, optional
-            DESCRIPTION. The default is 1.
-        number_of_factors : int, optional
-            DESCRIPTION. The default is 2.
-        """
-        self.verbose = verbose
-        
-        T,k = X.shape
-        self.lags_factor_dynamics = lags_factor_dynamics
-        self.lags_idiosyncratic_dynamics = lags_idiosyncratic_dynamics
-        
-        # demean series
+        # scale series
         self.X_mean = np.mean(X,0)
         self.X_std = np.std(X,0)
-        X = (X - self.X_mean) / self.X_std
+        if method == 'original':
+            pass
+        elif method == 'demeaned':
+            X = X - self.X_mean
+        elif method == 'standardized':
+            X = (X - self.X_mean) / self.X_std
+        else:
+            raise ValueError("method should be 'original', 'demeaned' or 'standardized'")
         
         # Estimate factors via PCA
         XX = X.T @ X / T
@@ -1023,30 +1044,56 @@ class DFM3():
             X_resid = X - F @ self.L
             self.noise_dynamics.train(X_resid, self.lags_idiosyncratic_dynamics)
     
+    
     def train_CV(self, X, 
                  range_lags_fd = [i+1 for i in range(5)], 
                  range_lags_id = [i+1 for i in range(3)], 
                  range_numfac = [i+1 for i in range(5)],
+                 method = 'standardized',
                  verbose = True):
         """
-        Trains a DFM for the series X. Chooses the number of factors in the 
-        given range that minimizes the cross-validation MSE. The last 10% of 
-        the observations are used for validation. The best model is trained
-        again on the whole set.
+        train_CV(self, X, 
+                      range_lags_fd = [i+1 for i in range(5)], 
+                      range_lags_id = [i+1 for i in range(3)], 
+                      range_numfac = [i+1 for i in range(5)],
+                      method = 'standardized',
+                      verbose = True)
+        
+        Trains a DFM for the series X. The last 10% of observations are used 
+        for validation. Chooses the hyperparameters in the given ranges that 
+        minimize the validation MSE. The best model is trained again on the 
+        whole set.
 
         Parameters
         ----------
-        X : TYPE
-            DESCRIPTION.
-        range_lags_fd : list of int, optional
-            Number of lags to consider for the factor dynamics. 
-            The default is [1,2,3,4,5].
-        range_lags_id : list of int, optional
-            Number of lags to consider for the idiosyncratic dynamics. 
-            The default is [1,2,3].
-        range_numfac : list of int, optional
-            Number of factors to consider. The default is [1,2,3,4,5].
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
+        range_lags_fd : list, optional
+            List of integers, number of lags to consider for the factor 
+            dynamics. The default is [1,2,3,4,5].
+        range_lags_id : list, optional
+            List of integers, numbers of lags to consider for the idiosyncratic 
+            dynamics. The default is [1,2,3].
+        range_numfac : list, optional
+            List of integers, numbers of factors to consider. The default is 
+            [1,2,3,4,5].
+        method : str, optional
+            Scaling before applying PCA. Should be one of:
+            - 'original': no scaling
+            - 'demeaned': demean the series before applying PCA
+            - 'standardized': standardize the series (mean=0, std=1)
+            The default is 'standardized'.
+        verbose : bool, optional
+            Indicates, whether updates on the training progress should be 
+            outputted in the console. The default is True.
+
+        Returns
+        -------
+        None.
         """
+        
         self.verbose = verbose
         
         T,k = X.shape
@@ -1059,7 +1106,7 @@ class DFM3():
                 for k,lags_fd in enumerate(range_lags_fd):
                     # print(str(i+1) + ' of ' + str(len(range_numfac)))
                     maxlags = max([lags_fd, lags_id])
-                    self.train(X_train, lags_fd, lags_id, num_fac)
+                    self.train(X_train, lags_fd, lags_id, num_fac, method, verbose)
                     X_pred = self.forecast(X_val)
                     MSE[i,j,k] = np.mean((X_val[maxlags:, :] - X_pred[:-1, :])**2)
                     
@@ -1076,10 +1123,40 @@ class DFM3():
                    self.best_lags_fd,
                    self.best_lags_id,
                    self.best_numfac)
-        
+    
+    
     def forecast(self, X):
-        # demean series
-        X = (X - self.X_mean) / self.X_std
+        """
+        forecast(self, X)
+        
+        Computes 1-step-ahead forecasts for the provided observations based on
+        the estimated model.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            (m,k) array of observed series
+            m - number of observations, has to be larger or equal than number 
+                of lags
+            k - number of series
+
+        Returns
+        -------
+        X_pred : numpy.ndarray
+            (m-lags+1,k) array of forecasted series
+            m - number of observations
+            k - number of series
+        """
+        
+        # scale series
+        if self.method == 'original':
+            pass
+        elif self.method == 'demeaned':
+            X = X - self.X_mean
+        elif self.method == 'standardized':
+            X = (X - self.X_mean) / self.X_std
+        else:
+            raise ValueError("method should be 'original', 'demeaned' or 'standardized'")
         
         F = X @ self.L.T
         F_pred = self.factor_dynamics.forecast(F)
@@ -1097,7 +1174,14 @@ class DFM3():
             else:
                 X_predicted += e_predicted[-lags_diff:,:]
         
-        # add mean to predicted series
-        X_predicted = X_predicted * self.X_std + self.X_mean
+        # rescale to predicted series
+        if self.method == 'original':
+            X_pred = X_predicted
+        elif self.method == 'demeaned':
+            X_pred = X_predicted + self.X_mean
+        elif self.method == 'standardized':
+            X_pred = X_predicted * self.X_std + self.X_mean
+        else:
+            raise ValueError("method should be 'original', 'demeaned' or 'standardized'")
         
-        return X_predicted
+        return X_pred
