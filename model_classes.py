@@ -1,23 +1,53 @@
 import numpy as np
 import keras
 from keras.backend import clear_session
-
 import statsmodels.api as sm
 from numpy.linalg import inv
-import time
 
 
 
 class autoencoder(keras.models.Sequential):
-    def train(self, X_raw, number_of_factors):
+    """
+    Autoencoder class. Inherits from the keras.models.Sequential class. Can be
+    used to train an autoencoder, encode data and decode previously encoded 
+    data. 
+    
+    Available methods:
+    - train: Trains an autoencoder with specified architecture and given data.
+    - encode: Encodes data based on the trained network.
+    - decode: Decodes encoded data based on the trained network.
+    
+    The methods encode and decode can be used only after training.
+    """
+    
+    def train(self, X_raw, number_of_factors, w=100):
         """
-        X_raw: np.ndarray
-            (T, k) array of observed series
+        train(self, X_raw, number_of_factors, w=100)
+        
+        Trains an outoencoder with 5 layers. The width of input and output 
+        layer is given by the dimension of the data, the width of second and 
+        fourth layer by w, and the width of the third layer by 
+        number_of_factors.
+
+        Parameters
+        ----------
+        X_raw: numpy.ndarray
+            (n, k) array of observed data
+            n - number of observations
+            k - number of variables
         number_of_factors: int
-            number of factors to estimate, neurons in the bottleneck layer
+            number of neurons in the bottleneck layer / factors to estimate
+        w : int, optional
+            Number of neurons in the second and fourth layer, respectively. 
+            The default is 100.
+
+        Returns
+        -------
+        None.
         """
+        
         # obtain number of observations and series
-        T, k = X_raw.shape
+        n, k = X_raw.shape
         
         # standardize input
         self.X_mean = np.mean(X_raw, 0)
@@ -25,12 +55,12 @@ class autoencoder(keras.models.Sequential):
         X = (X_raw - self.X_mean) / self.X_std
         
         # Model Architecture
-        self.add(keras.layers.Dense(100, 
+        self.add(keras.layers.Dense(w, 
                                     activation = 'tanh',
                                     input_dim = k,
                                     kernel_regularizer = keras.regularizers.l2(0.001)))
         self.add(keras.layers.Dense(number_of_factors))
-        self.add(keras.layers.Dense(100,
+        self.add(keras.layers.Dense(w,
                                     activation = 'tanh',
                                     kernel_regularizer=keras.regularizers.l2(0.001)))
         self.add(keras.layers.Dense(k))
@@ -52,7 +82,29 @@ class autoencoder(keras.models.Sequential):
                                                             restore_best_weights = True)],
                  verbose = 0)
     
+    
     def encode(self, X_raw):
+        """
+        encode(self, X_raw)
+        
+        Encodes the provided data and returns the estimated corresponding 
+        factors.
+
+        Parameters
+        ----------
+        X_raw : numpy.ndarray
+            (m,k) array of observed data.
+            m - number of observations to decode
+            k - number of variables, has to match training data.
+
+        Returns
+        -------
+        F : numpy.ndarray
+            (m,number_of_factors) array of encoded data.
+            m - number of observations to decode
+            number_of_factors - as provided in the method train.
+        """
+        
         # standardize series
         X = (X_raw - self.X_mean) / self.X_std
         
@@ -61,27 +113,88 @@ class autoencoder(keras.models.Sequential):
         for layer in self.layers[:2]:
             encoder.add(layer)
         
-        # return encoded series
-        return encoder.predict(X)
+        # obtain encoded series
+        F = encoder.predict(X)
+        
+        return F
+    
     
     def decode(self, F):
+        """
+        decode(self, F)
+        
+        Decode the provided factors/decoded data and return the reconstructed
+        data.
+
+        Parameters
+        ----------
+        F : numpy.ndarray
+            (m,number_of_factors) array of encoded data.
+            m - number of observations to decode
+            number_of_factors - as provided in the method train.
+
+        Returns
+        -------
+        X_decoded : numpy.ndarray
+            (m,k) array of decoded data.
+            m - number of observations to decode
+            k - number of variables, has to match training data.
+        """
+        
         # obtain decoder
         decoder = keras.models.Sequential()
         for layer in self.layers[2:]:
             decoder.add(layer)
         
-        # return rescaled predicted series
-        return decoder.predict(F) * self.X_std + self.X_mean
+        # obtain rescaled predicted series
+        X_decoded = decoder.predict(F) * self.X_std + self.X_mean
+        
+        return X_decoded
+
 
 
 class TimeSeriesMLP():
+    """
+    Class to train and forecast multiple time series using a multilayer 
+    perceptron. 
+    
+    Available methods:
+    train: Trains the network for a given number of lags.
+    train_CV: Trains the network for a list of numbers of lags and chooses the
+        best-performing number of lags on a validation set.
+    forecast: computes 1-step-ahead forecasts based on the trained network.
+    
+    The method forecast can only be used after running the method train or
+    train_CV.
+    """
+    
     def __init__(self):
         pass
-    def train(self, X_raw, lags=1):
+    
+    
+    def train(self, X_raw, lags=1, w=100):
         """
-        X_raw: np.ndarray
-            (T, k) array of observed series
+        train(self, X_raw, lags=1, w=100)
+        
+        Trains a multilayer perceptron with one hidden layer, using the lagged
+        values of the series as regressors.
+
+        Parameters
+        ----------
+        X_raw : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
+        lags : int, optional
+            Number of lags. The default is 1.
+        w : int, optional
+            Width of the hidden layer. The default is 100.
+
+        Returns
+        -------
+        None.
         """
+        
         # initialize network
         self.MLP = keras.models.Sequential()
         
@@ -95,7 +208,7 @@ class TimeSeriesMLP():
         X = (X_raw - self.X_mean) / self.X_std
         
         # Model architecture
-        self.MLP.add(keras.layers.Dense(100, 
+        self.MLP.add(keras.layers.Dense(w, 
                                         activation = 'tanh',
                                         input_dim = k * lags,
                                         kernel_regularizer = keras.regularizers.l2(0.001)))
@@ -121,34 +234,51 @@ class TimeSeriesMLP():
                      callbacks = [keras.callbacks.EarlyStopping(patience = 50,
                                                                 restore_best_weights = True)],
                      verbose = 0)
-        
-    def train_CV(self, X, range_lags = [i+1 for i in range(4)]):
+    
+    
+    def train_CV(self, X, range_lags = [i+1 for i in range(4)], w=100):
         """
+        train_CV(self, X, range_lags = [i+1 for i in range(4)], w=100)
+        
         Trains a MLP for the series X. Chooses the number of lags in the given 
-        range that minimizes the cross-validation MSE. The last 10% of the 
+        range that minimizes the validation MSE. The last 10% of the 
         observations are used for validation. The best model is trained again 
         on the whole set.
 
         Parameters
         ----------
-        X : TYPE
-            DESCRIPTION.
-        range_lags: list of int, optional
-            Number of lags to consider. 
-            The default is [1,2,3,4,5].
+        X : numpy.ndarray
+            (T,k) array of observed series
+            T - number of observations
+            k - number of series
+        range_lags: list, optional
+            list of integer numbers of lags to consider. 
+            The default is [1,2,3,4].
+        w : int, optional
+            Width of the hidden layer. The default is 100.
+
+        Returns
+        -------
+        None.
         """
+        
         T,k = X.shape
+        
+        # split the data in training and validation set
         split = int(np.round(0.9*T)) # index for splitting in training and validation
         X_train = X[:split, :] # training set
         X_val = X[split:, :] # validation set
+        
         MSE = np.zeros(len(range_lags))
         for i,lags in enumerate(range_lags):
-            # print(str(i+1) + ' of ' + str(len(range_numfac)))
+            # train the network
             clear_session()
-            self.train(X_train, lags)
+            self.train(X_train, lags=lags, w=w)
+            
+            # compute the validation MSE
             X_pred = self.forecast(X_val)
             MSE[i] = np.mean((X_val[lags:, :] - X_pred[:-1, :])**2)
-                    
+            
         # obtain MSE optimal hyperparameters
         self.best_lags = range_lags[np.argmin(MSE)]
         print(MSE)
@@ -156,129 +286,83 @@ class TimeSeriesMLP():
         # train the model for the number of lags minimizing the cross-val MSE
         self.train(X_train, self.best_lags)
     
+    
     def forecast(self, X_raw):
         """
-        X_raw: np.ndarray
-            (T, k) array of observed series
+        forecast(self, X_raw)
+        
+        Computes 1-step-ahead forecasts of the provided series.
+
+        Parameters
+        ----------
+        X_raw : numpy.ndarray
+            (m,k) array of observed series
+            m - number of observations, has to be larger or equal than number 
+                of lags
+            k - number of series
+
+        Returns
+        -------
+        X_forecast : numpy.ndarray
+            (m-lags+1,k) array of forecasted series
+            m - number of observations
+            k - number of series
         """
+        
         # obtain length and number of series
-        T, k = X_raw.shape
+        m, k = X_raw.shape
         
         # Standardize series
         X = (X_raw - self.X_mean) / self.X_std
         
         # Prepare Data
-        X_x = np.hstack(tuple(X[i:T-self.lags+i+1,:] for i in range(self.lags)))
+        X_x = np.hstack(tuple(X[i:m-self.lags+i+1,:] for i in range(self.lags)))
         
         # predict output
         X_pred = self.MLP.predict(X_x)
         
-        # return rescaled variables
-        return X_pred * self.X_std + self.X_mean
-
-
-
-# class TimeSeriesMLP(keras.models.Sequential):
-#     def train(self, X_raw, lags=1):
-#         """
-#         X_raw: np.ndarray
-#             (T, k) array of observed series
-#         """
-#         T, k = X_raw.shape
-#         self.lags = lags
+        # obtain rescaled forecasted variables
+        X_forecast = X_pred * self.X_std + self.X_mean
         
-#         # Standardize series
-#         self.X_mean = np.mean(X_raw, 0)
-#         self.X_std = np.std(X_raw, 0)
-#         X = (X_raw - self.X_mean) / self.X_std
-        
-#         # Model architecture
-#         self.add(keras.layers.Dense(100, 
-#                                     activation = 'tanh',
-#                                     input_dim = k * lags,
-#                                     kernel_regularizer = keras.regularizers.l2(0.001)))
-#         self.add(keras.layers.Dense(k))
-        
-#         # Compilation
-#         self.compile(optimizer = keras.optimizers.Adam(lr=0.015, 
-#                                                        beta_1=0.9, 
-#                                                        beta_2=0.999, 
-#                                                        epsilon=1E-8,
-#                                                        amsgrad=False),
-#                      loss = 'mse')
-        
-#         # Prepare Data
-#         X_x = np.hstack(tuple(X[i:T-lags+i,:] for i in range(lags)))
-#         X_y = X[lags:,:]
-        
-#         # Training
-#         self.fit(X_x, X_y,
-#                  epochs = 300,
-#                  batch_size = 512,
-#                  validation_split = 0.1,
-#                  callbacks = [keras.callbacks.EarlyStopping(patience = 50,
-#                                                             restore_best_weights = True)],
-#                  verbose = 0)
-        
-#     def train_CV(self, X, range_lags = [i+1 for i in range(4)]):
-#         """
-#         Trains a MLP for the series X. Chooses the number of lags in the given 
-#         range that minimizes the cross-validation MSE. The last 10% of the 
-#         observations are used for validation. The best model is trained again 
-#         on the whole set.
-
-#         Parameters
-#         ----------
-#         X : TYPE
-#             DESCRIPTION.
-#         range_lags: list of int, optional
-#             Number of lags to consider. 
-#             The default is [1,2,3,4,5].
-#         """
-#         T,k = X.shape
-#         split = int(np.round(0.9*T)) # index for splitting in training and validation
-#         X_train = X[:split, :] # training set
-#         X_val = X[split:, :] # validation set
-#         MSE = np.zeros(len(range_lags))
-#         for i,lags in enumerate(range_lags):
-#             # print(str(i+1) + ' of ' + str(len(range_numfac)))
-#             self.train(X_train, lags)
-#             X_pred = self.forecast(X_val)
-#             MSE[i] = np.mean((X_val[lags:, :] - X_pred[:-1, :])**2)
-                    
-#         # obtain MSE optimal hyperparameters
-#         self.best_lags = range_lags[np.argmin(MSE)]
-#         print(MSE)
-        
-#         # train the model for the number of lags minimizing the cross-val MSE
-#         self.train(X_train, self.best_lags)
-    
-#     def forecast(self, X_raw):
-#         """
-#         X_raw: np.ndarray
-#             (T, k) array of observed series
-#         """
-#         # obtain length and number of series
-#         T, k = X_raw.shape
-        
-#         # Standardize series
-#         X = (X_raw - self.X_mean) / self.X_std
-        
-#         # Prepare Data
-#         X_x = np.hstack(tuple(X[i:T-self.lags+i+1,:] for i in range(self.lags)))
-        
-#         # predict output
-#         X_pred = self.predict(X_x)
-        
-#         # return rescaled variables
-#         return X_pred * self.X_std + self.X_mean
+        return X_forecast
 
 
 
 class diagonal_VAR():
+    """
+    Class to train a vector autogregressive (VAR) model with diagonal 
+    coefficient matrices. I.e., equivalent to training autoregressive models 
+    for each of the provided time series individually.
+    
+    Available methods:
+    - train: Trains a diagonal VAR for a given number of lags.
+    - forecast: Computes 1-step-ahead forecasts based on the trained VAR
+    
+    The method forecast can be used only after running the method train.
+    """
+    
     def __init__(self):
         pass
+    
+    
     def train(self, X, lags):
+        """
+        train(self, X, lags)
+        
+        
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            (T,k) array of observed series.
+        lags : int
+            Number of lags.
+
+        Returns
+        -------
+        None.
+        """
+        
         T,k = X.shape
         beta = np.zeros((k,lags))
         for i in range(k):
@@ -291,7 +375,24 @@ class diagonal_VAR():
         self.k = k
         self.beta = beta
     
+    
     def forecast(self, X):
+        """
+        forecast(self, X)
+        
+        
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            DESCRIPTION.
+
+        Returns
+        -------
+        X_pred : numpy.ndarray
+            DESCRIPTION.
+        """
+        
         T,k = X.shape
         lags = self.lags
         if k != self.k:
