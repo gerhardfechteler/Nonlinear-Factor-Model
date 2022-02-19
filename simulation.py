@@ -3,6 +3,10 @@ from simulation_classes import nDFM_simulator4 as nDFM_simulator
 from model_classes import nDFM, TimeSeriesMLP, VAR, DFM
 from keras.backend import clear_session
 
+
+###############################################################################
+# Data generation
+
 # series properties
 r = 5
 k = 50
@@ -25,6 +29,10 @@ X = simulator.simulate()
 # Create train and test data
 X_train = X[:T_train,:]
 X_test = X[T_train:,:]
+
+
+###############################################################################
+# Estimation (on training data) and prediction (on test data)
 
 # Oracle
 X_pred_oracle, X_pred_oracle_boot = simulator.predict_oracle()
@@ -111,6 +119,10 @@ model_MLP_CV = TimeSeriesMLP()
 model_MLP_CV.train_CV(X_train)
 X_pred_MLP_CV = model_MLP_CV.forecast(X_test)
 print('MLP_CV completed')
+
+
+###############################################################################
+# Performance evaluation via validation MSE
 
 # MSE comparison
 MSE_oracle = np.mean((X_test[maxlags:]-X_pred_oracle[:-1])**2)
