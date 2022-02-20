@@ -451,6 +451,8 @@ class nDFM():
               lags_idiosyncratic_dynamics = 1, 
               number_of_factors = 2,
               training_method = 'state_space',
+              width_autoencoder = 100,
+              width_factor_dynamics = 100,
               verbose = True):
         """
         train(self, X, 
@@ -458,6 +460,8 @@ class nDFM():
                   lags_idiosyncratic_dynamics = 1, 
                   number_of_factors = 2,
                   training_method = 'state_space',
+                  width_autoencoder = 100,
+                  width_factor_dynamics = 100,
                   verbose = True)
         
         Trains a nonlinear dynamic factor model for the series X.
@@ -482,6 +486,11 @@ class nDFM():
             - 'state_space': uses the state space representation for estimation
             - 'VAR': uses the VAR representation for estimation
             The default is 'state_space'.
+        width_autoencoder : int, optional
+            Width of the hidden layer in the autoencoder. The default is 100.
+        width_factor_dynamics : int, optional
+            Width of the hidden layer of the MLP estimating the factor 
+            dynamics. The default is 100.
         verbose : bool, optional
             Indicates, whether updates on the training progress should be 
             outputted in the console. The default is True.
@@ -504,6 +513,8 @@ class nDFM():
         self.lags_factor_dynamics = lags_factor_dynamics
         self.lags_idiosyncratic_dynamics = lags_idiosyncratic_dynamics
         self.number_of_factors = number_of_factors
+        self.width_autoencoder = width_autoencoder
+        self.width_factor_dynamics = width_factor_dynamics
         
         # call training methods based on training_method
         if (training_method == 'state_space'):
@@ -519,6 +530,8 @@ class nDFM():
                   range_lags_id = [i+1 for i in range(3)], 
                   range_numfac = [i+1 for i in range(5)],
                   training_method = 'state_space',
+                  width_autoencoder = 100,
+                  width_factor_dynamics = 100,
                   verbose = True):
         """
         train_CV(self, X, 
@@ -526,6 +539,8 @@ class nDFM():
                       range_lags_id = [i+1 for i in range(3)], 
                       range_numfac = [i+1 for i in range(5)],
                       training_method = 'state_space',
+                      width_autoencoder = 100,
+                      width_factor_dynamics = 100,
                       verbose = True)
         
         Trains a nDFM for the series X. Chooses the hyperparameters in the 
@@ -553,6 +568,11 @@ class nDFM():
             - 'state_space': uses the state space representation for estimation
             - 'VAR': uses the VAR representation for estimation
             The default is 'state_space'.
+        width_autoencoder : int, optional
+            Width of the hidden layer in the autoencoder. The default is 100.
+        width_factor_dynamics : int, optional
+            Width of the hidden layer of the MLP estimating the factor 
+            dynamics. The default is 100.
         verbose : bool, optional
             Indicates, whether updates on the training progress should be 
             outputted in the console. The default is True.
@@ -577,7 +597,9 @@ class nDFM():
                               ', idiosyncratic lag '+str(j+1)+' of '+str(len(range_lags_id))+
                               ', factor dynamic lag '+str(k+1)+' of '+str(len(range_lags_fd)))
                     maxlags = max([lags_fd, lags_id])
-                    self.train(X_train, lags_fd, lags_id, num_fac, training_method, verbose)
+                    self.train(X_train, lags_fd, lags_id, num_fac, 
+                               training_method, width_autoencoder, 
+                               width_factor_dynamics, verbose)
                     X_pred = self.forecast(X_val)[1]
                     MSE[i,j,k] = np.mean((X_val[maxlags:, :] - X_pred[:-1, :])**2)
                     
@@ -615,13 +637,13 @@ class nDFM():
         """
         
         # estimate autoencoder
-        self.autoencoder.train(X, self.number_of_factors)
+        self.autoencoder.train(X, self.number_of_factors, w=self.width_autoencoder)
         
         # estimate factors
         F = self.autoencoder.encode(X)
         
         # estimate factor dynamics
-        self.factor_dynamics.train(F, self.lags_factor_dynamics)
+        self.factor_dynamics.train(F, self.lags_factor_dynamics, w=self.width_factor_dynamics)
         
         # predict factors
         F_predicted = self.factor_dynamics.forecast(F)
@@ -1205,14 +1227,12 @@ class nDFM_simulator():
                  lags_factor_dynamics = 1,
                  lags_idiosyncratic_dynamics = 1,
                  p_nonlin = 0.5,
-                 p_sparse = 0.5,
                  signal_noise_ratio = 1):
         """
         __init__(self, k = 50, r = 2, T = 1000,
                      lags_factor_dynamics = 1,
                      lags_idiosyncratic_dynamics = 1,
                      p_nonlin = 0.5,
-                     p_sparse = 0.5,
                      signal_noise_ratio = 1)
         
         Initializes the simulator for a nonlinear dynamic factor model.
@@ -1231,8 +1251,6 @@ class nDFM_simulator():
             number of lags in the idiosyncratic noise dynamics. The default is 1.
         p_nonlin: float, optional
             measure for nonlinearity, should be in [0,1]. The default is 0.5.
-        p_sparse: float, optional
-            measure for sparsity, should be larger than zero. The default is 0.5.
         signal_noise_ratio : float, optional
             Ratio of standard deviations of factor innovations and 
             idiosyncratic innovations. The default is 1.
@@ -1247,14 +1265,17 @@ class nDFM_simulator():
         self.T = T
         self.lags_factor_dynamics = lags_factor_dynamics
         self.lags_idiosyncratic_dynamics = lags_idiosyncratic_dynamics
-        self.p_sparse = p_sparse
         self.p_nonlin = p_nonlin
         self.signal_noise_ratio = signal_noise_ratio
-        self.initialized = False # indicates, whether the model is initialized
+        
+        # indicator, whether the model is initialized
+        self.initialized = False 
     
     
     def simulate(self):
         """
+        simulate(self)
+        
         Simulates a (T,k) array of series based on the model specified at 
         creation of the nDFM_simulator instance. The model parameters 
         (autoregressive matrices and function from factors to series) are 
@@ -1262,10 +1283,20 @@ class nDFM_simulator():
 
         Returns
         -------
-        X : numpy.ndarray
-            (T,k) array of simulated series.
-            T - number of observations
-            k - number of series
+        simulation_wrapper : dict
+            Keys:
+            'X' : numpy.ndarray
+                (T,k) array of simulated series
+            'X_no_noise' : numpy.ndarray
+                (T,k) array of simulated series without idiosyncratic noise
+            'idiosyncratic_innovations' : numpy.ndarray
+                (T,k) array of idiosyncratic innovations
+            'idiosyncratic_noise' : numpy.ndarray
+                (T,k) array of idiosyncratic noise
+            'factor_innovations' : numpy.ndarray
+                (T,r) array of factor innovations
+            'factors' : numpy.ndarray
+                (T,r) array of factors
         """
         
         # initialize the model, i.e. fix the model dynamics
@@ -1279,6 +1310,8 @@ class nDFM_simulator():
     
     def __initialize__(self):
         """
+        __initialize__(self)
+        
         Initializes the simulation by defining phi, psi and the mapping from
         factors to series in accordance with the model structure specified at
         creation of the nDFM_simulator instance.
@@ -1293,8 +1326,9 @@ class nDFM_simulator():
             the lag polynomial matrix phi for the idiosyncratic dynamics
         self.decoder: tuple
             tuple containing the transformations for each factor, the
-            transformations for the interactions and the factors that should
-            be interacted.
+            transformations for the interactions, the factors that should
+            be interacted, the loadings for the factors, and the loadings for
+            the factor matrix.
         """
         
         # define the lag polynomial matrix for factor dynamics
@@ -1328,12 +1362,6 @@ class nDFM_simulator():
         L = np.random.randint(0, self.r-1, (self.T, self.r)) # interacting factor
         for i in range(self.r):
             L[:,i] = L[:,i] + np.heaviside(L[:,i]-i,1) # avoids that a factor interacts with itself
-        # trafo1 = np.random.randint(0, 5, (self.k, self.r)) # trafos of individual factors
-        # trafo2 = np.random.randint(0, 5, (self.k, self.r)) # trafos of factor interactions
-        # F_interact = np.random.randint(0, self.r-1, (self.T, self.r)) # factors for interaction
-        # for i in range(self.r):
-        #     F_interact[:,i] = F_interact[:,i] + np.heaviside(F_interact[:,i]-i,1) # avoids that a factor interacts with itself
-        # self.decoder = (trafo1, trafo2, F_interact)
         self.decoder = (A,B,V,W,L)
         
         # the model is now initialized
@@ -1342,20 +1370,34 @@ class nDFM_simulator():
     
     def __simulate__(self):
         """
+        __simulate__(self)
+        
         Simulates a (T,k) array of series based on the random initialization
         made in __initialize__.
         
         Creates the attributes
         ----------------------
-        self.F: np.ndarray
+        self.F : numpy.ndarray
             (T,r) array of simulated Factors
-        self.eps: np.ndarray
-            (T,k) array of simulated error terms
+        self.eps : numpy.ndarray
+            (T,k) array of simulated idiosyncratic noise
         
         Returns
         -------
-        X : np.ndarray
-            (T,k) array of simulated series.
+        simulation_wrapper : dict
+            Keys:
+            'X' : numpy.ndarray
+                (T,k) array of simulated series
+            'X_no_noise' : numpy.ndarray
+                (T,k) array of simulated series without idiosyncratic noise
+            'idiosyncratic_innovations' : numpy.ndarray
+                (T,k) array of idiosyncratic innovations
+            'idiosyncratic_noise' : numpy.ndarray
+                (T,k) array of idiosyncratic noise
+            'factor_innovations' : numpy.ndarray
+                (T,r) array of factor innovations
+            'factors' : numpy.ndarray
+                (T,r) array of factors
         """
         
         # Check, whether the model has been initialized
@@ -1404,21 +1446,45 @@ class nDFM_simulator():
     
     def __F2X__(self, F):
         """
-        function from factors to series
+        __F2X__(self, F)
+        
+        Function from factors to series based on the random generation in 
+        the method __initialize__.
         
         Parameters
         ----------
-        F: np.ndarray
+        F : numpy.ndarray
             (T,r) array of factors
             
         Returns
         -------
-        X_no_noise: np.ndarray
+        X_no_noise : numpy.ndarray
             (T,k) array of series without idiosyncratic noise term
         """
         
         # transformations
         def trafo(x,ind,p=1):
+            """
+            trafo(x,ind,p=1)
+            
+            Implementation of the transformation functions used on factors and
+            factor interactions.
+
+            Parameters
+            ----------
+            x : numpy.ndarray
+                Data to transform.
+            ind : int
+                index for the transformation, should be one of 0,1,2,3,4.
+            p : float, optional
+                degree of nonlinearity, should be in [0,1]. The default is 1.
+
+            Returns
+            -------
+            numpy.ndarray
+                array of the transformed data.
+            """
+            
             if ind==0:
                 return (1-p)*x + p*(np.sign(x)*np.log(1+np.abs(x)))
             elif ind==1:
@@ -1432,34 +1498,37 @@ class nDFM_simulator():
             else:
                 raise ValueError('Index for transformation type out of range')
         
-        # # obtain factors and trafos
-        # trafo1, trafo2, F_interact = self.decoder
-        # X = np.zeros((F.shape[0], self.k))
-        # for i in range(self.k):
-        #     for j in range(self.r):
-        #         X[:,i] += (1-self.p_nonlin/2) * trafo(F[:,j], trafo1[i,j], self.p_nonlin)
-        #         X[:,i] += self.p_nonlin/2 * trafo(F[:,j]*F[:,F_interact[i,j]], trafo2[i,j], self.p_nonlin)
-        
+        # get draws for the parameters of the function from factors to series
         A,B,V,W,L = self.decoder
+        
+        # construct the series from the factors
         X_no_noise = np.zeros((F.shape[0], self.k))
         for i in range(self.k):
             for j in range(self.r):
                 X_no_noise[:,i] += (A[i,j] * trafo(F[:,j], V[i,j], self.p_nonlin) + 
                                     self.p_nonlin * B[i,j] * trafo(F[:,j]*F[:,L[i,j]], W[i,j], self.p_nonlin))
+        
         return X_no_noise
         
     
     def predict_oracle(self):
         """
+        predict_oracle(self)
+        
         Predicts based on the (T,r) array of true factors and the (r,r) lag 
         polynomial matrix psi the one-step-ahead factor vector and then based 
         on the true mapping from factors to series the one-step-ahead series.
+        Quasi-simulates the de-biased version of the prediction, as the 
+        function from factors to series is non-linear.
 
         Returns
         -------
-        X_predicted : np.ndarray
-            DESCRIPTION.
-
+        X_predicted : numpy.ndarray
+            (T-lags+1,k) array of predicted series, not bias-corrected. lags is
+            the maximum number of lags in idiosyncratic and factor dynamics.
+        X_predicted_boot : numpy.ndarray
+            (T-lags+1,k) array of predicted series, bias-corrected.lags is the 
+            maximum number of lags in idiosyncratic and factor dynamics.
         """
         
         # forecast factors
