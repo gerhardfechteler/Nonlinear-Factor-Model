@@ -3,7 +3,7 @@ from nDFM_module import nDFM, TimeSeriesMLP, VAR, DFM, nDFM_simulator
 from keras.backend import clear_session
 import matplotlib.pyplot as plt
 import pandas as pd
-from statsmodels.graphics.tsaplots import plot_pacf, plot_acf
+from statsmodels.graphics.tsaplots import plot_pacf
 
 # np.random.seed(2)
 
@@ -36,7 +36,7 @@ X_test = X[T_train:,:]
 
 
 ###############################################################################
-# Visualization of propervies of simulated series
+# Visualization of properties of simulated series
 
 # Factor and series correlation table
 F_corr = pd.DataFrame(simulation['factors']).corr()
