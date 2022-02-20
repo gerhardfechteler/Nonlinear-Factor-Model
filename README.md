@@ -15,6 +15,7 @@ nDFM_module contains the following classes:
 
 
 autoencoder:
+
 Autoencoder class. Inherits from the keras.models.Sequential class. Can be used to train an autoencoder, encode data and decode previously encoded data. 
 
 Available methods:
@@ -71,6 +72,7 @@ Available methods:
 - forecast: computes 1-step-ahead forecasts based on the estimated model.
 
 The method forecast can only be used after running the method train or train_CV.
+
 
 
 DFM:
