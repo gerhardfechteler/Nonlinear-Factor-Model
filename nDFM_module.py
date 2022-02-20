@@ -1320,12 +1320,21 @@ class nDFM_simulator():
         self.phi = phi
         
         # making a draw from the random components in the factor to series trafo
-        trafo1 = np.random.randint(0, 5, (self.k, self.r)) # trafos of individual factors
-        trafo2 = np.random.randint(0, 5, (self.k, self.r)) # trafos of factor interactions
-        F_interact = np.random.randint(0, self.r-1, (self.T, self.r)) # factors for interaction
+        # X_it = sum_j=1^r a_i,j T(F_jt; v_ij) + b_ij T(F_jt F_l_ij,t; w_ij) + eps_it
+        A = np.random.uniform(-2, 2, (self.k, self.r)) # loading of individual factors
+        B = np.random.uniform(-2, 2, (self.k, self.r)) # loading of factor interactions
+        V = np.random.randint(0, 5, (self.k, self.r)) # trafos of individual factors
+        W = np.random.randint(0, 5, (self.k, self.r)) # trafos of factor interactions
+        L = np.random.randint(0, self.r-1, (self.T, self.r)) # interacting factor
         for i in range(self.r):
-            F_interact[:,i] = F_interact[:,i] + np.heaviside(F_interact[:,i]-i,1) # avoids that a factor interacts with itself
-        self.decoder = (trafo1, trafo2, F_interact)
+            L[:,i] = L[:,i] + np.heaviside(L[:,i]-i,1) # avoids that a factor interacts with itself
+        # trafo1 = np.random.randint(0, 5, (self.k, self.r)) # trafos of individual factors
+        # trafo2 = np.random.randint(0, 5, (self.k, self.r)) # trafos of factor interactions
+        # F_interact = np.random.randint(0, self.r-1, (self.T, self.r)) # factors for interaction
+        # for i in range(self.r):
+        #     F_interact[:,i] = F_interact[:,i] + np.heaviside(F_interact[:,i]-i,1) # avoids that a factor interacts with itself
+        # self.decoder = (trafo1, trafo2, F_interact)
+        self.decoder = (A,B,V,W,L)
         
         # the model is now initialized
         self.initialized = True
@@ -1404,12 +1413,12 @@ class nDFM_simulator():
             
         Returns
         -------
-        X: np.ndarray
-            (T,k) array of series
+        X_no_noise: np.ndarray
+            (T,k) array of series without idiosyncratic noise term
         """
         
         # transformations
-        def trafo(x,ind,p):
+        def trafo(x,ind,p=1):
             if ind==0:
                 return (1-p)*x + p*(np.sign(x)*np.log(1+np.abs(x)))
             elif ind==1:
@@ -1423,14 +1432,21 @@ class nDFM_simulator():
             else:
                 raise ValueError('Index for transformation type out of range')
         
-        # obtain factors and trafos
-        trafo1, trafo2, F_interact = self.decoder
-        X = np.zeros((F.shape[0], self.k))
+        # # obtain factors and trafos
+        # trafo1, trafo2, F_interact = self.decoder
+        # X = np.zeros((F.shape[0], self.k))
+        # for i in range(self.k):
+        #     for j in range(self.r):
+        #         X[:,i] += (1-self.p_nonlin/2) * trafo(F[:,j], trafo1[i,j], self.p_nonlin)
+        #         X[:,i] += self.p_nonlin/2 * trafo(F[:,j]*F[:,F_interact[i,j]], trafo2[i,j], self.p_nonlin)
+        
+        A,B,V,W,L = self.decoder
+        X_no_noise = np.zeros((F.shape[0], self.k))
         for i in range(self.k):
             for j in range(self.r):
-                X[:,i] += (1-self.p_nonlin/2) * trafo(F[:,j], trafo1[i,j], self.p_nonlin)
-                X[:,i] += self.p_nonlin/2 * trafo(F[:,j]*F[:,F_interact[i,j]], trafo2[i,j], self.p_nonlin)
-        return X
+                X_no_noise[:,i] += (A[i,j] * trafo(F[:,j], V[i,j], self.p_nonlin) + 
+                                    self.p_nonlin * B[i,j] * trafo(F[:,j]*F[:,L[i,j]], W[i,j], self.p_nonlin))
+        return X_no_noise
         
     
     def predict_oracle(self):
