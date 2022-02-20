@@ -1526,7 +1526,7 @@ class nDFM_simulator():
         X_predicted : numpy.ndarray
             (T-lags+1,k) array of predicted series, not bias-corrected. lags is
             the maximum number of lags in idiosyncratic and factor dynamics.
-        X_predicted_boot : numpy.ndarray
+        X_predicted_debiased : numpy.ndarray
             (T-lags+1,k) array of predicted series, bias-corrected.lags is the 
             maximum number of lags in idiosyncratic and factor dynamics.
         """
@@ -1538,10 +1538,10 @@ class nDFM_simulator():
         
         # obtain series from forecasted factors
         X_predicted = self.__F2X__(F_pred) # plug-in estimate
-        X_predicted_boot = np.zeros((F_pred.shape[0],self.k)) # bootstrapped version
+        X_predicted_debiased = np.zeros((F_pred.shape[0],self.k)) # debiased version
         for i in range(50):
-            X_predicted_boot += self.__F2X__(F_pred + np.random.normal(0,1,F_pred.shape))
-        X_predicted_boot /= 50
+            X_predicted_debiased += self.__F2X__(F_pred + np.random.normal(0,1,F_pred.shape))
+        X_predicted_debiased /= 50
         
         # forecast errors
         eps_pred = np.zeros((self.T+1-self.lags_idiosyncratic_dynamics, self.k))
@@ -1552,9 +1552,9 @@ class nDFM_simulator():
         lags_diff = self.lags_idiosyncratic_dynamics - self.lags_factor_dynamics
         if lags_diff >= 0:
             X_predicted = X_predicted[lags_diff:,:] + eps_pred
-            X_predicted_boot = X_predicted_boot[lags_diff:,:] + eps_pred
+            X_predicted_debiased = X_predicted_debiased[lags_diff:,:] + eps_pred
         else:
             X_predicted += eps_pred[-lags_diff:,:]
-            X_predicted_boot += eps_pred[-lags_diff:,:]
+            X_predicted_debiased += eps_pred[-lags_diff:,:]
         
-        return X_predicted, X_predicted_boot
+        return X_predicted, X_predicted_debiased
