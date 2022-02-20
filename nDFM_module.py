@@ -159,10 +159,10 @@ class TimeSeriesMLP():
     perceptron. 
     
     Available methods:
-    train: Trains the network for a given number of lags.
-    train_CV: Trains the network for a list of numbers of lags and chooses the
+    - train: Trains the network for a given number of lags.
+    - train_CV: Trains the network for a list of numbers of lags and chooses the
         best-performing number of lags on a validation set.
-    forecast: computes 1-step-ahead forecasts based on the trained network.
+    - forecast: computes 1-step-ahead forecasts based on the trained network.
     
     The method forecast can only be used after running the method train or
     train_CV.
@@ -817,10 +817,10 @@ class VAR():
     Class to estimate a vector autoregressive (VAR) model and make predictions.
     
     Available methods:
-    train: Estimates the model for a given number of lags.
-    train_CV: Estimates the model for a list of numbers of lags and chooses the
+    - train: Estimates the model for a given number of lags.
+    - train_CV: Estimates the model for a list of numbers of lags and chooses the
         best-performing number of lags on a validation set.
-    forecast: computes 1-step-ahead forecasts based on the estimated model.
+    - forecast: computes 1-step-ahead forecasts based on the estimated model.
     
     The method forecast can only be used after running the method train or
     train_CV.
@@ -969,7 +969,7 @@ class DFM():
     
     Available methods:
     - train: train the linear factor model for given factor lags, idiosyncratic
-        lags and factors .
+        lags and factors.
     - train_CV: train the linear factor model via a grid search for the
         hyperparameters, choosing the model minimizing the validation MSE.
     - forecast: computes 1-step-ahead forecasts based on the estimated model.
