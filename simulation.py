@@ -3,7 +3,7 @@ from nDFM_module import nDFM, TimeSeriesMLP, VAR, DFM, nDFM_simulator
 from keras.backend import clear_session
 import matplotlib.pyplot as plt
 
-np.random.seed(1)
+# np.random.seed(2)
 ###############################################################################
 # Data generation
 
@@ -14,9 +14,9 @@ T_train = 1000
 T_test = 1000
 lags_factor_dynamics = 2
 lags_idiosyncratic_dynamics = 2
-p_nonlin = 0.6
+p_nonlin = 0.8
 p_sparse = 0.1
-signal_noise_ratio = 1
+signal_noise_ratio = 2
 
 maxlags = max([lags_factor_dynamics, lags_idiosyncratic_dynamics])
 
@@ -99,11 +99,11 @@ model_DFM3_CV.train_CV(X_train,
 X_pred_DFM3_CV = model_DFM3_CV.forecast(X_test)
 print('DFM3_CV completed')
 
-# # nonlinear DFM
-# model_nDFM = nDFM()
-# model_nDFM.train(X_train, lags_factor_dynamics, lags_idiosyncratic_dynamics, r)
-# X_pred_nDFM, X_pred_nDFM_boot = model_nDFM.forecast(X_test)
-# print('nDFM completed')
+# nonlinear DFM
+model_nDFM = nDFM()
+model_nDFM.train(X_train, lags_factor_dynamics, lags_idiosyncratic_dynamics, r)
+X_pred_nDFM, X_pred_nDFM_boot = model_nDFM.forecast(X_test)
+print('nDFM completed')
 
 # # nonlinear DFM cross-validated
 # model_nDFM_CV = nDFM()
@@ -132,8 +132,8 @@ print('DFM3_CV completed')
 # MSE comparison
 MSE_oracle = np.mean((X_test[maxlags:]-X_pred_oracle[:-1])**2)
 MSE_oracle_boot = np.mean((X_test[maxlags:]-X_pred_oracle_boot[:-1])**2)
-# MSE_nDFM = np.mean((X_test[maxlags:]-X_pred_nDFM[:-1])**2)
-# MSE_nDFM_boot = np.mean((X_test[maxlags:]-X_pred_nDFM_boot[:-1])**2)
+MSE_nDFM = np.mean((X_test[maxlags:]-X_pred_nDFM[:-1])**2)
+MSE_nDFM_boot = np.mean((X_test[maxlags:]-X_pred_nDFM_boot[:-1])**2)
 # MSE_nDFM_CV = np.mean((X_test[-X_pred_nDFM_CV.shape[0]+1:]-X_pred_nDFM_CV[:-1])**2)
 # MSE_nDFM_boot_CV = np.mean((X_test[-X_pred_nDFM_boot_CV.shape[0]+1:]-X_pred_nDFM_boot_CV[:-1])**2)
 # MSE_DFM = np.mean((X_test[maxlags:]-X_pred_DFM[:-1])**2)
@@ -153,8 +153,8 @@ V_X = np.var(X_test[maxlags:],0)
 
 MSE_rel_oracle = np.mean(np.mean((X_test[maxlags:]-X_pred_oracle[:-1])**2, 0) / V_X)
 MSE_rel_oracle_boot = np.mean(np.mean((X_test[maxlags:]-X_pred_oracle_boot[:-1])**2, 0) / V_X)
-# MSE_rel_nDFM = np.mean(np.mean((X_test[maxlags:]-X_pred_nDFM[:-1])**2, 0) / V_X)
-# MSE_rel_nDFM_boot = np.mean(np.mean((X_test[maxlags:]-X_pred_nDFM_boot[:-1])**2, 0) / V_X)
+MSE_rel_nDFM = np.mean(np.mean((X_test[maxlags:]-X_pred_nDFM[:-1])**2, 0) / V_X)
+MSE_rel_nDFM_boot = np.mean(np.mean((X_test[maxlags:]-X_pred_nDFM_boot[:-1])**2, 0) / V_X)
 # MSE_rel_nDFM_CV = np.mean(np.mean((X_test[-X_pred_nDFM_CV.shape[0]+1:]-X_pred_nDFM_CV[:-1])**2, 0) / V_X)
 # MSE_rel_nDFM_boot_CV = np.mean(np.mean((X_test[-X_pred_nDFM_boot_CV.shape[0]+1:]-X_pred_nDFM_boot_CV[:-1])**2, 0) / V_X)
 # MSE_rel_DFM = np.mean(np.mean((X_test[maxlags:]-X_pred_DFM[:-1])**2, 0) / V_X)
