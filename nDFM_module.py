@@ -1072,14 +1072,14 @@ class DFM():
                  range_lags_id = [i+1 for i in range(3)], 
                  range_numfac = [i+1 for i in range(5)],
                  method = 'standardized',
-                 verbose = True):
+                 verbose = False):
         """
         train_CV(self, X, 
                       range_lags_fd = [i+1 for i in range(5)], 
                       range_lags_id = [i+1 for i in range(3)], 
                       range_numfac = [i+1 for i in range(5)],
                       method = 'standardized',
-                      verbose = True)
+                      verbose = False)
         
         Trains a DFM for the series X. The last 10% of observations are used 
         for validation. Chooses the hyperparameters in the given ranges that 
