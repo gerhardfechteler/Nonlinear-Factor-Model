@@ -73,7 +73,7 @@ Available methods:
 
 The method forecast can only be used after running the method train or train_CV.
 
-
+ 
 
 DFM:
 
