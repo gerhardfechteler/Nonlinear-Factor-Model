@@ -14,16 +14,10 @@ nDFM_module contains the following classes:
 - nDFM_simulator : simulates data from a nonlinear dynamic factor model and makes oracle predictions
 
 
-autoencoder:
-
-Autoencoder class. Inherits from the keras.models.Sequential class. Can be used to train an autoencoder, encode data and decode previously encoded data. 
-
-Available methods:
+autoencoder: Autoencoder class. Inherits from the keras.models.Sequential class. Can be used to train an autoencoder, encode data and decode previously encoded data. Available methods:
 - train: Trains an autoencoder with specified architecture and given data.
 - encode: Encodes data based on the trained network.
 - decode: Decodes encoded data based on the trained network.
-
-The methods encode and decode can be used only after training.
 
 
 TimeSeriesMLP:
