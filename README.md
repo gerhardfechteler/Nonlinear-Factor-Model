@@ -15,7 +15,6 @@ nDFM_module contains the following classes:
 
 
 autoencoder:
-
 Autoencoder class. Inherits from the keras.models.Sequential class. Can be used to train an autoencoder, encode data and decode previously encoded data. 
 
 Available methods:
