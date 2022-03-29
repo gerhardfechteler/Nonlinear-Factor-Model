@@ -778,7 +778,7 @@ class nDFM():
             # merge factor and noise components
             lags_diff = self.lags_idiosyncratic_dynamics - self.lags_factor_dynamics
             if lags_diff >= 0:
-                X_predicted = X_predicted[-lags_diff:,:] + e_predicted
+                X_predicted = X_predicted[lags_diff:,:] + e_predicted
                 X_predicted_boot = X_predicted_boot[lags_diff:,:] + e_predicted
             else:
                 X_predicted += e_predicted[-lags_diff:,:]
@@ -854,28 +854,18 @@ class VAR():
         T, k = X.shape
         self.k = k
         self.lags = lags
+
+        # construct the regressor matrix
+        Z = np.hstack(tuple([X[lag:T-lags+lag,:] for lag in range(lags)]))
+        Z = sm.add_constant(Z)
         
-        # Define the matrices corresponding to the matrix notation of the VAR
-        Y1 = X[lags:,:].T
-        Z1 = np.hstack(tuple([X[lag:T-lags+lag,:] for lag in range(lags)]))
-        Z1 = sm.add_constant(Z1).T
+        # construct the matrix of dependent variables
+        Y = X[lags:,:]
         
-        # Vectorize the matrix equation
-        Y2 = Y1.reshape((-1,1))
-        Z2 = np.kron(np.eye(k), Z1.T)
-        
-        # obtain the OLS parameter estimator
-        A2 = inv(Z2.T @ Z2) @ Z2.T @ Y2
-        
-        # construct the parameter matrix
-        A1 = A2.reshape((k, k*lags+1))
-        self.A1 = A1
-        
-        # construct the autogregressive matrices
-        A = [A1[:,0].reshape((-1,1))]
-        for i in range(lags):
-            A.append(A1[:,i*k+1:(i+1)*k+1])
-        self.A = A
+        # construct the OLS estimator
+        PZ = inv(Z.T @ Z) @ Z.T
+
+        self.A1 = (PZ @ Y).T
     
     
     def train_CV(self, X, range_lags = [i+1 for i in range(3)]):
@@ -1072,6 +1062,7 @@ class DFM():
                  range_lags_id = [i+1 for i in range(3)], 
                  range_numfac = [i+1 for i in range(5)],
                  method = 'standardized',
+                 K = 5,
                  verbose = False):
         """
         train_CV(self, X, 
@@ -1079,6 +1070,7 @@ class DFM():
                       range_lags_id = [i+1 for i in range(3)], 
                       range_numfac = [i+1 for i in range(5)],
                       method = 'standardized',
+                      K = 5,
                       verbose = False)
         
         Trains a DFM for the series X. The last 10% of observations are used 
@@ -1107,9 +1099,11 @@ class DFM():
             - 'demeaned': demean the series before applying PCA
             - 'standardized': standardize the series (mean=0, std=1)
             The default is 'standardized'.
+        K : int, optional
+            number of folds for cross-validation. The default is 5.
         verbose : bool, optional
             Indicates, whether updates on the training progress should be 
-            outputted in the console. The default is True.
+            outputted in the console. The default is False.
 
         Returns
         -------
@@ -1119,18 +1113,32 @@ class DFM():
         self.verbose = verbose
         
         T,k = X.shape
-        split = int(np.round(0.9*T)) # index for splitting in training and validation
-        X_train = X[:split, :] # training set
-        X_val = X[split:, :] # validation set
+        
+        # number of observations per fold
+        opf = int(np.floor(T/K))
+        
+        list_X_val = [X[i*opf:(i+1)*opf, :] for i in range(K)]
+        list_X_train = []
+        for ki in range(K):
+            listi = list_X_val.copy()
+            listi.pop(ki)
+            list_X_train.append(np.vstack(tuple(listi)))
+        
         MSE = np.zeros((len(range_numfac), len(range_lags_id), len(range_lags_fd)))
-        for i,num_fac in enumerate(range_numfac):
-            for j,lags_id in enumerate(range_lags_id):
-                for k,lags_fd in enumerate(range_lags_fd):
-                    # print(str(i+1) + ' of ' + str(len(range_numfac)))
-                    maxlags = max([lags_fd, lags_id])
-                    self.train(X_train, lags_fd, lags_id, num_fac, method, verbose)
-                    X_pred = self.forecast(X_val)
-                    MSE[i,j,k] = np.mean((X_val[maxlags:, :] - X_pred[:-1, :])**2)
+        
+        for foldi in range(K):
+            X_train = list_X_train[foldi]
+            X_val = list_X_val[foldi]
+        
+            for i,num_fac in enumerate(range_numfac):
+                for j,lags_id in enumerate(range_lags_id):
+                    for k,lags_fd in enumerate(range_lags_fd):
+                        # print(str(i+1) + ' of ' + str(len(range_numfac)))
+                        maxlags = max([lags_fd, lags_id])
+                        self.train(X_train, lags_fd, lags_id, num_fac, method, verbose)
+                        X_pred = self.forecast(X_val)
+                        MSE[i,j,k] += np.mean((X_val[maxlags:, :] - X_pred[:-1, :])**2)
+        MSE /= K
                     
         # obtain MSE optimal hyperparameters
         best_index = [x[0] for x in np.where(MSE == np.min(MSE))]
